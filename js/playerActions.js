@@ -11,12 +11,13 @@ function attack(scene) {
     
     // Create a projectile (ender crystal)
     const projectile = scene.projectiles.create(window.player.x, window.player.y, 'ender_crystal');
-    projectile.setScale(0.1);
+    projectile.setScale(0.2); // Increased to 0.2
     projectile.body.setAllowGravity(false);
     projectile.setData('isEnderCrystal', true);
+    console.log("Created projectile with isEnderCrystal flag:", projectile.getData('isEnderCrystal'));
     
     // Set projectile velocity based on player facing direction
-    const direction = window.player.body.velocity.x >= 0 ? 1 : -1;
+    const direction = window.player.flipX ? -1 : 1; // Use player's facing direction instead of velocity
     projectile.setVelocityX(direction * 400);
     projectile.setVelocityY(-100); // Slight upward trajectory
     

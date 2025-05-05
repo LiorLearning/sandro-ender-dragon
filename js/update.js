@@ -1,5 +1,5 @@
 import { attack, teleportPlayer } from './playerActions.js';
-import { dragonBreatheFire } from './create.js';
+import { dragonBreatheFire, updateDragonHealthBar } from './create.js';
 import { updateMinimap } from './minimap.js';
 
 // Game loop
@@ -29,6 +29,11 @@ function update(time, delta) {
     
     // Update health bar width based on health
     window.healthBar.width = (window.playerHealth / 100) * 200;
+    
+    // Update dragon health bar if it's visible
+    if (window.dragonHealthBar && window.dragonHealthBar.visible) {
+        updateDragonHealthBar();
+    }
     
     // Attack when space is pressed
     if (window.attackKey.isDown && !window.attackCooldown) {
@@ -79,8 +84,19 @@ function update(time, delta) {
         }
     }
     
-    // Update towers text
-    window.towersText.setText(`Towers: ${window.towers.filter(t => t.active).length}/${window.totalTowers}`);
+    // Update towers text and check dragon vulnerability
+    const remainingTowers = window.towers.filter(t => t.active).length;
+    window.towersText.setText(`Towers: ${remainingTowers}/${window.totalTowers}`);
+    
+    // Double-check: Make dragon vulnerable if no towers remain
+    if (remainingTowers === 0 && window.dragon.invincible) {
+        console.log("Update check: No towers remaining! Making dragon vulnerable.");
+        window.dragon.invincible = false;
+        window.dragonHealthText.setVisible(true);
+        window.dragonHealthBar.setVisible(true);
+        window.dragonHealthBar.background.setVisible(true);
+        updateDragonHealthBar();
+    }
     
     // Update minimap
     updateMinimap.call(this);

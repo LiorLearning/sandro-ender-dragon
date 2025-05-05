@@ -77,3 +77,5 @@ window.towersText = null;
 window.gameOverText = null;
 window.teleportTimerText = null;
 window.inventoryText = null;
+window.dragonHealthBar = null;
+window.dragonHealthText = null;

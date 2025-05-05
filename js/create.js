@@ -18,10 +18,12 @@ function create() {
     window.dragon.setVelocityX(150);
     window.dragon.body.setAllowGravity(false);
     window.dragon.setCollideWorldBounds(false);
-    window.dragon.health = 5; // Add health to the dragon
+    window.dragon.health = 10; // Add health to the dragon
+    window.dragon.maxHealth = 10; // Store max health for the health bar
     window.dragon.fireTimer = 0; // Timer for dragon's fire breathing
     window.dragon.setOrigin(0.5);
     window.dragon.invincible = true; // Make dragon invincible until all towers are destroyed
+    console.log("Dragon created and set to invincible until all towers are destroyed");
 
     // DEBUG: Add visual indicator for dragon direction
     window.directionIndicator = this.add.text(window.dragon.x, window.dragon.y - 30, "→", { fontSize: '32px', fill: '#ff0' });
@@ -34,10 +36,11 @@ function create() {
         .setScale(window.worldWidth/400, 1)
         .refreshBody();
     
-    // Add floating platforms throughout the world
+    // Add floating platforms throughout the world (starting farther from the player)
     const platformPositions = [];
     for (let i = 0; i < 20; i++) {
-        const x = window.worldWidth * (i / 20) + Math.random() * 300;
+        // Start platforms farther from player's initial position (which is at x=100)
+        const x = (i === 0) ? 400 : window.worldWidth * (i / 20) + Math.random() * 300;
         const y = window.innerHeight * (0.3 + Math.random() * 0.5);
         const platform = window.platforms.create(x, y, 'ground')
             .setScale(0.2, 0.2)
@@ -45,7 +48,7 @@ function create() {
         platformPositions.push({ x, y, platform });
     }
     
-    // Create towers on random platforms (10 towers)
+    // Create 10 towers on random platforms
     this.towerGroup = this.physics.add.group();
     const numTowers = 10;
     window.totalTowers = numTowers;
@@ -89,7 +92,16 @@ function create() {
     this.physics.add.overlap(window.player, this.dragonFire, hitByDragonFire, null, this);
     
     // Add collision between projectiles and towers
-    this.physics.add.overlap(this.projectiles, this.towerGroup, hitTower, null, this);
+    this.physics.add.overlap(
+        this.projectiles, 
+        this.towerGroup, 
+        hitTower, 
+        (projectile, tower) => {
+            // Only allow collision if both objects are active
+            return projectile.active && tower.active;
+        }, 
+        this
+    );
     
     // Set up camera to follow player
     this.cameras.main.setBounds(0, 0, window.worldWidth, window.innerHeight);
@@ -148,30 +160,56 @@ function create() {
         fontFamily: 'Arial'
     }).setScrollFactor(0);
     
+    // Dragon health bar and text (initially hidden)
+    window.dragonHealthText = this.add.text(16, 186, 'Dragon: 10/10', { 
+        fontSize: '24px', 
+        fill: '#ff5555',
+        fontFamily: 'Arial'
+    }).setScrollFactor(0).setVisible(false);
+    
+    const dragonBarBackground = this.add.rectangle(200, 186, 200, 16, 0x000000).setScrollFactor(0).setVisible(false);
+    dragonBarBackground.setOrigin(0, 0.5);
+    window.dragonHealthBar = this.add.rectangle(200, 186, 200, 16, 0xff5555).setScrollFactor(0).setVisible(false);
+    window.dragonHealthBar.setOrigin(0, 0.5);
+    
+    // Store reference to dragon bar background for toggling visibility
+    window.dragonHealthBar.background = dragonBarBackground;
+    
     updateInventoryDisplay();
 }
 
 // Function to handle tower being hit by projectile
-function hitTower(tower, projectile) {
+function hitTower(projectile, tower) {
     // Check if the projectile is an ender crystal
     const isEnderCrystal = projectile.getData('isEnderCrystal');
     
-    // Destroy the projectile
-    projectile.destroy();
-    
-    // Only proceed if it was an ender crystal
-    if (!isEnderCrystal) {
+    // Immediately return if the projectile is not valid
+    if (!isEnderCrystal || !projectile.active || !tower.active) {
         return;
     }
     
-    // Destroy the tower with effects
-    createTowerDestructionEffect(this, tower.x, tower.y);
+    // Get the scene
+    const scene = projectile.scene;
     
-    // Deactivate the tower
+    console.log("Tower hit! Destroying tower...");
+    
+    // Create destruction effect
+    createTowerDestructionEffect(scene, tower.x, tower.y);
+    
+    // Completely deactivate tower
     tower.setActive(false);
     tower.setVisible(false);
     
-    // Also update the minimap marker for this tower
+    // Disable physics body
+    if (tower.body) {
+        if (typeof tower.body.enable !== 'undefined') {
+            tower.body.enable = false;
+        }
+        // Force removal from physics world
+        tower.body.checkCollision.none = true;
+    }
+    
+    // Update the minimap marker
     const towerEntity = window.minimapEntities.find(
         entity => entity.type === 'tower' && entity.gameObject === tower
     );
@@ -183,30 +221,84 @@ function hitTower(tower, projectile) {
     window.score += 50;
     window.scoreText.setText('Score: ' + window.score);
     
+    // Destroy the projectile
+    projectile.destroy();
+    
     // Check if all towers are destroyed
     const remainingTowers = window.towers.filter(t => t.active).length;
+    window.towersText.setText(`Towers: ${remainingTowers}/${window.totalTowers}`);
+    
+    console.log(`Remaining towers: ${remainingTowers}. Dragon invincible: ${window.dragon.invincible}`);
+    
     if (remainingTowers === 0) {
+        console.log("All towers destroyed! Making dragon vulnerable!");
         window.dragon.invincible = false; // Make dragon vulnerable when all towers are destroyed
         
+        // Show dragon health bar when it becomes vulnerable
+        window.dragonHealthText.setVisible(true);
+        window.dragonHealthBar.setVisible(true);
+        window.dragonHealthBar.background.setVisible(true);
+        
+        // Update dragon health bar
+        updateDragonHealthBar();
+        
         // Add a visual effect or notification that dragon is now vulnerable
-        const notification = this.add.text(
-            this.cameras.main.width / 2, 
-            this.cameras.main.height / 3, 
+        const notification = scene.add.text(
+            scene.cameras.main.width / 2, 
+            scene.cameras.main.height / 3, 
             "DRAGON IS VULNERABLE!", 
-            { fontSize: '36px', fill: '#ff0', fontFamily: 'Arial' }
+            { fontSize: '36px', fill: '#ff0', fontFamily: 'Arial', backgroundColor: '#880000', padding: { x: 20, y: 10 } }
         )
         .setOrigin(0.5)
         .setScrollFactor(0);
         
-        // Fade out the notification after 3 seconds
-        this.tweens.add({
+        // Make the text pulse to attract attention
+        scene.tweens.add({
+            targets: notification,
+            scale: 1.2,
+            duration: 500,
+            yoyo: true,
+            repeat: 5,
+            ease: 'Sine.easeInOut'
+        });
+        
+        // Change dragon tint to indicate it's now vulnerable
+        window.dragon.setTint(0xff7777);
+        
+        // Fade out the notification after 5 seconds (longer to ensure visibility)
+        scene.tweens.add({
             targets: notification,
             alpha: 0,
-            duration: 3000,
+            delay: 3000,
+            duration: 2000,
             ease: 'Power2',
             onComplete: () => notification.destroy()
         });
     }
+}
+
+// Function to create tower hit effect (smaller than destruction)
+function createTowerHitEffect(scene, x, y) {
+    // Create hit particles
+    const particles = scene.add.particles('projectile');
+    const emitter = particles.createEmitter({
+        x: x,
+        y: y,
+        speed: { min: 30, max: 60 },
+        angle: { min: 0, max: 360 },
+        scale: { start: 0.05, end: 0.01 },
+        alpha: { start: 0.6, end: 0 },
+        tint: [0xff8800, 0xff4400], // Orange tints
+        blendMode: 'ADD',
+        lifespan: 500,
+        quantity: 15,
+        maxParticles: 15
+    });
+    
+    // Auto-destroy the particle emitter after it's done
+    scene.time.delayedCall(500, () => {
+        particles.destroy();
+    });
 }
 
 // Function to create tower destruction effect
@@ -234,7 +326,7 @@ function createTowerDestructionEffect(scene, x, y) {
 }
 
 // Function to handle dragon being hit by projectile
-function hitDragon(dragon, projectile) {
+function hitDragon(projectile, dragon) {
     // Determine if it's an ender crystal
     const isEnderCrystal = projectile.getData('isEnderCrystal');
     
@@ -242,6 +334,7 @@ function hitDragon(dragon, projectile) {
     projectile.destroy();
     
     // If dragon is invincible, show message and return
+    console.log(`Hit dragon! Dragon invincible status: ${dragon.invincible}`);
     if (dragon.invincible) {
         // Create a floating text effect
         const invincibleText = this.add.text(
@@ -250,6 +343,8 @@ function hitDragon(dragon, projectile) {
             "INVINCIBLE!", 
             { fontSize: '24px', fill: '#ff0', fontFamily: 'Arial' }
         );
+        
+        console.log("Dragon is still invincible! Destroy all towers first!");
         
         // Make the text rise and fade out
         this.tweens.add({
@@ -298,10 +393,13 @@ function hitDragon(dragon, projectile) {
     window.score += 10;
     window.scoreText.setText('Score: ' + window.score);
     
+    // Update dragon health bar
+    updateDragonHealthBar();
+    
     // Special effects on hit
     createDragonHitEffect(this, dragon.x, dragon.y);
     
-    // If dragon is defeated, respawn it after a delay
+    // If dragon is defeated, player wins
     if (dragon.health <= 0) {
         // Create explosion effect
         const explosion = this.add.particles('ender_crystal');
@@ -327,42 +425,19 @@ function hitDragon(dragon, projectile) {
         dragon.setVisible(false);
         dragon.setActive(false);
         
+        // Hide dragon health bar
+        window.dragonHealthBar.setVisible(false);
+        window.dragonHealthBar.background.setVisible(false);
+        window.dragonHealthText.setVisible(false);
+        
         // Add big score bonus for defeating dragon
-        window.score += 100;
+        window.score += 1000;
         window.scoreText.setText('Score: ' + window.score);
         
-        // Show victory notification
-        const victoryText = this.add.text(
-            this.cameras.main.width / 2, 
-            this.cameras.main.height / 3, 
-            "DRAGON DEFEATED! +100 POINTS", 
-            { fontSize: '36px', fill: '#ffff00', fontFamily: 'Arial' }
-        )
-        .setOrigin(0.5)
-        .setScrollFactor(0);
+        // Display victory screen
+        displayVictory(this);
         
-        // Fade out the notification after 3 seconds
-        this.tweens.add({
-            targets: victoryText,
-            alpha: 0,
-            duration: 3000,
-            ease: 'Power2',
-            onComplete: () => victoryText.destroy()
-        });
-        
-        // Respawn after 5 seconds
-        setTimeout(() => {
-            // Reset dragon position and health to a random location
-            const randomXPosition = Phaser.Math.Between(100, window.worldWidth - 100);
-            dragon.x = randomXPosition;
-            dragon.y = 100;
-            dragon.health = 5;
-            dragon.setVisible(true);
-            dragon.setActive(true);
-            
-            // If there are still towers, dragon is invincible
-            dragon.invincible = window.towers.filter(t => t.active).length > 0;
-        }, 5000);
+        // Don't respawn the dragon - game is won!
     }
 }
 
@@ -505,7 +580,7 @@ function createFireExplosion(scene, x, y) {
 }
 
 // Function to handle player being hit by dragon fire
-function hitByDragonFire(player, fire) {
+function hitByDragonFire(fire, player) {
     // Get the graphics and particles from the fire object
     const fireGraphics = fire.getData('graphics');
     const fireParticles = fire.getData('particles');
@@ -632,10 +707,143 @@ function restartGame() {
     game.scene.scenes[0].scene.restart();
 }
 
+// Update dragon health bar
+function updateDragonHealthBar() {
+    if (window.dragon && window.dragonHealthBar && window.dragonHealthText) {
+        // Update text
+        window.dragonHealthText.setText(`Dragon: ${window.dragon.health}/${window.dragon.maxHealth}`);
+        
+        // Update bar width (200px is max width)
+        const healthPercentage = Math.max(0, window.dragon.health / window.dragon.maxHealth);
+        window.dragonHealthBar.width = healthPercentage * 200;
+    }
+}
+
+// Function to display victory screen
+function displayVictory(scene) {
+    if (window.gameOver) return; // Prevent multiple calls
+    
+    window.gameOver = true; // Use gameOver to prevent further game updates
+    
+    // Create semi-transparent overlay with golden color
+    const overlay = scene.add.rectangle(
+        0, 0,
+        scene.cameras.main.width, scene.cameras.main.height,
+        0x000000, 0.7
+    ).setOrigin(0, 0)
+     .setScrollFactor(0)
+     .setDepth(100);
+    
+    // Victory text
+    const victoryText = scene.add.text(
+        scene.cameras.main.width / 2,
+        scene.cameras.main.height / 2 - 50,
+        'VICTORY!',
+        { 
+            fontSize: '64px', 
+            fontFamily: 'Arial', 
+            fill: '#ffdd00',
+            fontStyle: 'bold'
+        }
+    ).setOrigin(0.5)
+     .setScrollFactor(0)
+     .setDepth(101);
+    
+    // Add a shine effect to the victory text
+    scene.tweens.add({
+        targets: victoryText,
+        alpha: 0.7,
+        duration: 500,
+        yoyo: true,
+        repeat: -1
+    });
+    
+    // Final score with bonus
+    const finalScoreText = scene.add.text(
+        scene.cameras.main.width / 2,
+        scene.cameras.main.height / 2 + 20,
+        `Final Score: ${window.score}`,
+        { 
+            fontSize: '32px', 
+            fontFamily: 'Arial', 
+            fill: '#ffffff' 
+        }
+    ).setOrigin(0.5)
+     .setScrollFactor(0)
+     .setDepth(101);
+    
+    // Victory message
+    const messageText = scene.add.text(
+        scene.cameras.main.width / 2,
+        scene.cameras.main.height / 2 + 60,
+        'You defeated the Ender Dragon!',
+        { 
+            fontSize: '28px', 
+            fontFamily: 'Arial', 
+            fill: '#ffdd00' 
+        }
+    ).setOrigin(0.5)
+     .setScrollFactor(0)
+     .setDepth(101);
+    
+    // Restart button
+    const restartButton = scene.add.text(
+        scene.cameras.main.width / 2,
+        scene.cameras.main.height / 2 + 120,
+        'Play Again',
+        { 
+            fontSize: '24px', 
+            fontFamily: 'Arial', 
+            fill: '#00ff00' 
+        }
+    ).setOrigin(0.5)
+     .setScrollFactor(0)
+     .setDepth(101)
+     .setInteractive({ useHandCursor: true });
+    
+    // Add hover effect
+    restartButton.on('pointerover', () => {
+        restartButton.setStyle({ fill: '#88ff88' });
+    });
+    
+    restartButton.on('pointerout', () => {
+        restartButton.setStyle({ fill: '#00ff00' });
+    });
+    
+    // Add click event to restart the game
+    restartButton.on('pointerdown', () => {
+        restartGame();
+    });
+    
+    // Disable player movement
+    if (window.player && window.player.body) {
+        window.player.body.moves = false;
+    }
+    
+    // Create celebratory particles
+    const particles = scene.add.particles('ender_crystal');
+    particles.createEmitter({
+        x: { min: 0, max: scene.cameras.main.width },
+        y: -50,
+        speed: { min: 100, max: 150 },
+        angle: { min: 80, max: 100 },
+        scale: { start: 0.1, end: 0.01 },
+        alpha: { start: 1, end: 0 },
+        lifespan: 4000,
+        quantity: 1,
+        frequency: 200,
+        tint: [0xffff00, 0xff8800, 0xff00ff, 0x00ffff],
+        blendMode: 'ADD'
+    }).setScrollFactor(0).setDepth(102);
+}
+
 export { 
     create, 
     hitTower, hitDragon, hitByDragonFire, 
     dragonBreatheFire, 
     damagePlayer,
-    displayGameOver, restartGame
+    displayGameOver, restartGame,
+    updateDragonHealthBar,
+    displayVictory,
+    createTowerHitEffect
 };
