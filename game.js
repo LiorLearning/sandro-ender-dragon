@@ -11,7 +11,7 @@ const config = {
         default: 'arcade',
         arcade: {
             gravity: { y: 300 },
-            debug: true
+            debug: false
         }
     },
     scene: {
@@ -55,8 +55,8 @@ let gameOverText;
 let minimap; // Minimap container
 let minimapEntities = []; // Array to store minimap entities
 let teleportCooldown = false; // Cooldown for teleportation
-let teleportCooldownTimer = 0; // Cooldown timer for teleportation (15 seconds)
-const TELEPORT_COOLDOWN_TIME = 15000; // 15 seconds cooldown
+let teleportCooldownTimer = 0; // Cooldown timer for teleportation (2 seconds)
+const TELEPORT_COOLDOWN_TIME = 2000; // 2 seconds cooldown
 let teleportTimerText; // Text to display teleport cooldown
 let inventoryText; // Text to display inventory items
 
@@ -231,11 +231,11 @@ function update(time, delta) {
     
     // Player movement
     if (cursors.left.isDown) {
-        player.setVelocityX(-160);
+        player.setVelocityX(-300);
         player.setFlipX(true);
     }
     else if (cursors.right.isDown) {
-        player.setVelocityX(160);
+        player.setVelocityX(300);
         player.setFlipX(false);
     }
     else {
@@ -244,7 +244,7 @@ function update(time, delta) {
 
     // Jump when up arrow is pressed and player is on the ground
     if (cursors.up.isDown && player.body.touching.down) {
-        player.setVelocityY(-500);
+        player.setVelocityY(-550);
     }
     
     // Update health bar width based on health
@@ -255,55 +255,64 @@ function update(time, delta) {
         attack(this);
     }
     
-    // Make dragon follow player
-    // Calculate direction from dragon to player
-    const directionX = player.x - dragon.x;
-    const directionY = player.y - dragon.y;
-    
-    // Calculate distance
-    const distance = Math.sqrt(directionX * directionX + directionY * directionY);
-    
-    // Normalize direction
-    const normalizedX = directionX / distance;
-    const normalizedY = directionY / distance;
-    
-    // Set dragon velocity to move toward player
-    const dragonSpeed = 120;
-    dragon.setVelocity(
-        normalizedX * dragonSpeed,
-        normalizedY * dragonSpeed
-    );
-    
-    // Update dragon's facing direction based on movement
-    if (dragon.body.velocity.x > 0) {
-        dragon.flipX = false;
-        dragon.scaleX = Math.abs(dragon.scaleX);
-        directionIndicator.setText("→");
-    } else {
-        dragon.flipX = true;
-        dragon.scaleX = -Math.abs(dragon.scaleX);
-        directionIndicator.setText("←");
-    }
-    
-    // Update direction indicator position to follow dragon
-    directionIndicator.x = dragon.x;
-    directionIndicator.y = dragon.y - 30;
-    
-    // Dragon fire breathing logic
+    // Make dragon follow player - only process if dragon is visible and within a reasonable distance
     if (dragon.active && dragon.visible) {
-        dragon.fireTimer += delta;
-        // Breathe fire every 3 seconds
-        if (dragon.fireTimer > 3000) {
-            dragonBreatheFire.call(this);
-            dragon.fireTimer = 0;
+        // Calculate direction from dragon to player
+        const directionX = player.x - dragon.x;
+        const directionY = player.y - dragon.y;
+        
+        // Calculate distance
+        const distance = Math.sqrt(directionX * directionX + directionY * directionY);
+        
+        // Only process dragon AI if within reasonable distance
+        if (distance < 800) {
+            // Normalize direction
+            const normalizedX = directionX / distance;
+            const normalizedY = directionY / distance;
+            
+            // Set dragon velocity to move toward player
+            const dragonSpeed = 180;
+            dragon.setVelocity(
+                normalizedX * dragonSpeed,
+                normalizedY * dragonSpeed
+            );
+            
+            // Update dragon's facing direction based on movement
+            if (dragon.body.velocity.x > 0) {
+                dragon.flipX = false;
+                dragon.scaleX = Math.abs(dragon.scaleX);
+                directionIndicator.setText("→");
+            } else {
+                dragon.flipX = true;
+                dragon.scaleX = -Math.abs(dragon.scaleX);
+                directionIndicator.setText("←");
+            }
+            
+            // Update direction indicator position to follow dragon
+            directionIndicator.x = dragon.x;
+            directionIndicator.y = dragon.y - 30;
+            
+            // Dragon fire breathing logic - only if close enough to player
+            if (distance < 500) {
+                dragon.fireTimer += delta;
+                // Breathe fire every 3 seconds
+                if (dragon.fireTimer > 3000) {
+                    dragonBreatheFire.call(this);
+                    dragon.fireTimer = 0;
+                }
+            }
         }
     }
     
-    // Update towers text
-    towersText.setText(`Towers: ${towers.filter(t => t.active).length}/${totalTowers}`);
+    // Update towers text - only if visible
+    if (towersText.visible) {
+        towersText.setText(`Towers: ${towers.filter(t => t.active).length}/${totalTowers}`);
+    }
     
-    // Update minimap
-    updateMinimap.call(this);
+    // Update minimap - only update every 5 frames for performance
+    if (time % 5 < 1) {
+        updateMinimap.call(this);
+    }
 
     // Update teleport cooldown timer
     if (teleportCooldown) {
@@ -346,28 +355,31 @@ function attack(scene) {
     
     // Create a projectile (ender crystal)
     const projectile = scene.projectiles.create(player.x, player.y, 'ender_crystal');
-    projectile.setScale(0.1);
+    projectile.setScale(0.2);
     projectile.body.setAllowGravity(false);
     projectile.setData('isEnderCrystal', true);
     
     // Set projectile velocity based on player facing direction
-    const direction = player.body.velocity.x >= 0 ? 1 : -1;
-    projectile.setVelocityX(direction * 400);
-    projectile.setVelocityY(-100); // Slight upward trajectory
+    // Use player's flipX property to determine direction instead of velocity
+    const direction = player.flipX ? -1 : 1;
+    projectile.setVelocityX(direction * 600);
+    projectile.setVelocityY(-150);
     
-    // Add a glow effect
+    // Add a glow effect with fewer particles
     const particles = scene.add.particles('ender_crystal');
     const emitter = particles.createEmitter({
-        scale: { start: 0.05, end: 0.01 },
+        scale: { start: 0.1, end: 0.02 },
         alpha: { start: 0.5, end: 0 },
         speed: 20,
         lifespan: 500,
         blendMode: 'ADD',
-        follow: projectile
+        follow: projectile,
+        frequency: 50,  // Emit less frequently
+        quantity: 1     // Emit fewer particles
     });
     
-    // Destroy projectile after 3 seconds if it doesn't hit anything
-    scene.time.delayedCall(3000, () => {
+    // Destroy projectile after 2 seconds instead of 3
+    scene.time.delayedCall(2000, () => {
         if (projectile.active) {
             particles.destroy();
             projectile.destroy();
@@ -407,7 +419,7 @@ function teleportPlayer(scene) {
     // Set cooldown
     teleportCooldown = true;
     teleportCooldownTimer = 0;
-    teleportTimerText.setText(`Teleport: 15s`);
+    teleportTimerText.setText(`Teleport: 2s`);
     
     // Create teleportation effect at current position
     createTeleportEffect(scene, player.x, player.y);
@@ -468,7 +480,7 @@ function teleportPlayer(scene) {
     });
 }
 
-// Create teleport effect
+// Create teleport effect with fewer particles
 function createTeleportEffect(scene, x, y) {
     // Create particles
     const particles = scene.add.particles('ender_pearl');
@@ -482,7 +494,8 @@ function createTeleportEffect(scene, x, y) {
         tint: [0xaa00ff, 0x00ffff, 0x00aaff],
         blendMode: 'ADD',
         lifespan: 800,
-        quantity: 40
+        quantity: 20,     // Reduced from 40
+        maxParticles: 20  // Add max limit
     });
     
     // Auto-destroy after effect completes
@@ -651,7 +664,7 @@ function hitTower(tower, projectile) {
     }
 }
 
-// Function to create tower destruction effect
+// Function to create tower destruction effect with fewer particles
 function createTowerDestructionEffect(scene, x, y) {
     // Create explosion particles
     const particles = scene.add.particles('projectile');
@@ -665,8 +678,8 @@ function createTowerDestructionEffect(scene, x, y) {
         tint: [0x885500, 0x774400, 0x663300], // Brown tints
         blendMode: 'ADD',
         lifespan: 800,
-        quantity: 30,
-        maxParticles: 30
+        quantity: 15,      // Reduced from 30
+        maxParticles: 15   // Add max limit
     });
     
     // Auto-destroy the particle emitter after it's done
@@ -808,7 +821,7 @@ function hitDragon(dragon, projectile) {
     }
 }
 
-// Create dragon hit effect
+// Create dragon hit effect with fewer particles
 function createDragonHitEffect(scene, x, y) {
     // Create particles
     const particles = scene.add.particles('ender_crystal');
@@ -821,24 +834,24 @@ function createDragonHitEffect(scene, x, y) {
         alpha: { start: 0.8, end: 0 },
         tint: [0xffff00, 0xff8800],
         blendMode: 'ADD',
-        lifespan: 1000,
-        quantity: 30
+        lifespan: 800,     // Reduced from 1000
+        quantity: 15,      // Reduced from 30
+        maxParticles: 15   // Add max limit
     });
     
     // Auto-destroy after effect completes
-    scene.time.delayedCall(1000, () => {
+    scene.time.delayedCall(800, () => {
         particles.destroy();
     });
 }
 
-// Function for dragon to breathe fire
+// Function for dragon to breathe fire - optimized
 function dragonBreatheFire() {
     // Create fire projectile from dragon's position using graphics instead of sprite
     const fire = this.add.graphics();
     
     // Draw fire shape with more yellowish-red colors
-    fire.fillStyle(0xffcc00, 1); // Yellow-orange outer color
-    fire.fillStyle(0xff3300, 0.9); // More reddish inner color
+    fire.fillStyle(0xffcc00, 0.7); // Yellow-orange outer color with reduced alpha
     
     // Create a fire shape object to hold our graphics
     const fireObj = this.dragonFire.create(dragon.x, dragon.y + 20, null);
@@ -853,7 +866,7 @@ function dragonBreatheFire() {
     const normalizedX = dirX / length;
     const normalizedY = dirY / length;
     
-    // Draw the flame shape - larger and more pronounced
+    // Draw the flame shape - more optimized
     fire.beginPath();
     fire.moveTo(0, 0);
     fire.lineTo(-20 + normalizedX * 5, -10 + normalizedY * 5);
@@ -862,17 +875,18 @@ function dragonBreatheFire() {
     fire.closePath();
     fire.fill();
     
-    // Add particles for the fire effect with yellowish-red colors
+    // Add particles for the fire effect with fewer particles
     const particles = this.add.particles('projectile');
     const emitter = particles.createEmitter({
         speed: 30,
         scale: { start: 0.06, end: 0.02 },
-        alpha: { start: 0.9, end: 0 },
-        tint: [0xffcc00, 0xff8800, 0xff3300], // Yellow to red gradient
+        alpha: { start: 0.7, end: 0 },  // Reduced alpha
+        tint: [0xffcc00, 0xff3300],     // Fewer colors
         blendMode: 'ADD',
-        lifespan: 800,
-        quantity: 2,
-        frequency: 50
+        lifespan: 600,                  // Reduced from 800
+        quantity: 1,                    // Reduced from 2
+        frequency: 100,                 // Reduced frequency (was 50)
+        maxParticles: 10                // Add max limit
     });
     
     // Attach the fire graphics and particles to our game object
@@ -881,8 +895,8 @@ function dragonBreatheFire() {
     
     // Set velocity based on direction to player
     fireObj.setVelocity(
-        normalizedX * 300,
-        normalizedY * 300
+        normalizedX * 450,
+        normalizedY * 450
     );
     
     // Add collision with platforms
@@ -909,8 +923,8 @@ function dragonBreatheFire() {
     // Add update function to the scene
     this.events.on('update', fireObj.update, fireObj);
     
-    // Destroy fire after 5 seconds (longer lifetime)
-    this.time.delayedCall(5000, () => {
+    // Destroy fire after 4 seconds (reduced from 5 seconds)
+    this.time.delayedCall(4000, () => {
         if (fireObj && fireObj.active) {
             // Remove update listener
             this.events.off('update', fireObj.update, fireObj);
@@ -922,7 +936,7 @@ function dragonBreatheFire() {
     });
 }
 
-// Helper function to create fire explosion effect when fire hits a platform
+// Helper function to create fire explosion effect with fewer particles
 function createFireExplosion(scene, x, y) {
     // Create explosion particles
     const explosionParticles = scene.add.particles('projectile');
@@ -932,16 +946,16 @@ function createFireExplosion(scene, x, y) {
         speed: { min: 50, max: 100 },
         angle: { min: 0, max: 360 },
         scale: { start: 0.1, end: 0.01 },
-        alpha: { start: 0.8, end: 0 },
-        tint: [0xffcc00, 0xff8800, 0xff3300],
+        alpha: { start: 0.7, end: 0 },    // Reduced alpha
+        tint: [0xffcc00, 0xff3300],       // Fewer colors
         blendMode: 'ADD',
-        lifespan: 800,
-        quantity: 20,
-        maxParticles: 20
+        lifespan: 600,                    // Reduced from 800
+        quantity: 10,                     // Reduced from 20
+        maxParticles: 10                  // Add max limit
     });
     
     // Auto-destroy the particle emitter after it's done
-    scene.time.delayedCall(800, () => {
+    scene.time.delayedCall(600, () => {
         explosionParticles.destroy();
     });
 }
@@ -1047,30 +1061,36 @@ function createMinimap() {
     updateMinimap.call(this);
 }
 
-// Function to update minimap
+// Function to update minimap - optimized version
 function updateMinimap() {
     if (!minimap) return;
     
     const minimapScale = 0.02; // Scale factor for converting world coordinates to minimap coordinates
     
-    // Update each entity on the minimap
+    // Update only essential entities on the minimap (player, dragon)
     minimapEntities.forEach(entity => {
+        if (entity.type !== 'player' && entity.type !== 'dragon' && 
+            entity.type !== 'tower') {
+            return; // Skip updating non-essential entities
+        }
+        
         if (!entity.gameObject.active) {
             // If game object is inactive, hide its marker
             entity.marker.setVisible(false);
             return;
         }
         
-        entity.marker.setVisible(true);
-        
-        // Calculate position on minimap
-        const x = (entity.gameObject.x - this.cameras.main.worldView.x) * minimapScale;
-        const y = (entity.gameObject.y - this.cameras.main.worldView.y) * minimapScale;
-        
-        // Clamp position to minimap boundaries
-        const clampedX = Phaser.Math.Clamp(x, -90, 90);
-        const clampedY = Phaser.Math.Clamp(y, -70, 70);
-        
-        entity.marker.setPosition(clampedX, clampedY);
+        // Only update visible entities
+        if (entity.marker.visible) {
+            // Calculate position on minimap
+            const x = (entity.gameObject.x - this.cameras.main.worldView.x) * minimapScale;
+            const y = (entity.gameObject.y - this.cameras.main.worldView.y) * minimapScale;
+            
+            // Clamp position to minimap boundaries
+            const clampedX = Phaser.Math.Clamp(x, -90, 90);
+            const clampedY = Phaser.Math.Clamp(y, -70, 70);
+            
+            entity.marker.setPosition(clampedX, clampedY);
+        }
     });
 }
