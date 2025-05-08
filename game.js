@@ -42,6 +42,10 @@ let attackCooldown = false;
 let playerHealth = 100;
 let healthText;
 let healthBar;
+let healthBarBackground;
+let dragonHealthText;
+let dragonHealthBar;
+let dragonHealthBarBackground;
 let enemies = [];
 let dragon;
 let dragonFireTimer = 0;
@@ -60,11 +64,15 @@ const TELEPORT_COOLDOWN_TIME = 2000; // 2 seconds cooldown
 let teleportTimerText; // Text to display teleport cooldown
 let inventoryText; // Text to display inventory items
 let mathPuzzle; // Math puzzle instance
+let victoryScreen; // Victory screen instance
 
 // Preload game assets
 function preload() {
     // Load the math puzzle script
     this.load.script('mathPuzzle', './mathPuzzle.js');
+    
+    // Load the victory screen script
+    this.load.script('victoryScreen', './victoryScreen.js');
     
     this.load.image('player', './assets/images/player.png');
     this.load.image('ground', './assets/images/platform.png');
@@ -86,6 +94,12 @@ function create() {
         .setOrigin(0, 0)
         .setScrollFactor(0.3); // Parallax effect
 
+    // Initialize math puzzle system
+    mathPuzzle = new MathPuzzle(this);
+    
+    // Initialize victory screen
+    victoryScreen = new VictoryScreen(this);
+
     // Create the dragon at a random position in the world
     const randomXPosition = Phaser.Math.Between(100, worldWidth - 100);
     dragon = this.physics.add.sprite(randomXPosition, 100, 'dragon');
@@ -93,10 +107,14 @@ function create() {
     dragon.setVelocityX(150);
     dragon.body.setAllowGravity(false);
     dragon.setCollideWorldBounds(false);
-    dragon.health = 5; // Add health to the dragon
+    dragon.health = 10; // Add health to the dragon
+    dragon.maxHealth = 10; // Maximum health of the dragon
     dragon.fireTimer = 0; // Timer for dragon's fire breathing
     dragon.setOrigin(0.5);
     dragon.invincible = true; // Make dragon invincible until all towers are destroyed
+    
+    // Print dragon status to console for debugging
+    console.log('Dragon initialized with invincible =', dragon.invincible);
 
     // DEBUG: Add visual indicator for dragon direction
     directionIndicator = this.add.text(dragon.x, dragon.y - 30, "→", { fontSize: '32px', fill: '#ff0' });
@@ -105,14 +123,14 @@ function create() {
     platforms = this.physics.add.staticGroup();
     
     // Create ground that spans the entire world width
-    platforms.create(worldWidth/2, window.innerHeight-32, 'ground')
+    platforms.create(worldWidth/2, window.innerHeight + 125, 'ground')
         .setScale(worldWidth/400, 1)
         .refreshBody();
     
     // Add floating platforms throughout the world
     const platformPositions = [];
     for (let i = 0; i < 20; i++) {
-        const x = worldWidth * (i / 20) + Math.random() * 300;
+        const x = worldWidth * (i / 20) + 400 + Math.random() * 300;
         const y = window.innerHeight * (0.3 + Math.random() * 0.5);
         const platform = platforms.create(x, y, 'ground')
             .setScale(0.2, 0.2)
@@ -122,7 +140,7 @@ function create() {
     
     // Create towers on random platforms (10 towers)
     this.towerGroup = this.physics.add.group();
-    const numTowers = 10;
+    const numTowers = 2;
     totalTowers = numTowers;
     
     // Select random platforms to place towers on
@@ -141,9 +159,6 @@ function create() {
         tower.body.setAllowGravity(false);
         towers.push(tower);
     });
-
-    // Initialize math puzzle system
-    mathPuzzle = new MathPuzzle(this);
 
     // Create player
     player = this.physics.add.sprite(100, window.innerHeight - 400, 'player');
@@ -180,29 +195,66 @@ function create() {
         fontFamily: 'Arial'
     }).setScrollFactor(0);
     
-    // Health text and bar
-    healthText = this.add.text(16, 50, 'Health: 100', { 
+    // Health text and bar for player
+    healthText = this.add.text(16, 50, 'Player Health: 100', { 
         fontSize: '24px', 
         fill: '#fff',
         fontFamily: 'Arial'
     }).setScrollFactor(0);
     
+    // Create improved player health bar that sticks to camera
+    healthBarBackground = this.add.rectangle(200, 64, 200, 20, 0x222222).setScrollFactor(0);
+    healthBarBackground.setStrokeStyle(2, 0xffffff);
+    healthBarBackground.setOrigin(-0.2, 0.5);
+    
+    healthBar = this.add.rectangle(200, 64, 200, 20, 0x00ff00).setScrollFactor(0);
+    healthBar.setOrigin(-0.2, 0.5);
+    
+    // Create dragon health UI elements
+    dragonHealthText = this.add.text(this.cameras.main.width - 220, 16, 'Dragon Health: 10', { 
+        fontSize: '24px', 
+        fill: '#ff5555',
+        fontFamily: 'Arial',
+        fontWeight: 'bold'
+    }).setScrollFactor(0);
+    
+    // Create dragon health bar that sticks to top of screen
+    dragonHealthBarBackground = this.add.rectangle(this.cameras.main.width - 400, 40, 200, 20, 0x222222).setScrollFactor(0);
+    dragonHealthBarBackground.setStrokeStyle(2, 0xffffff);
+    dragonHealthBarBackground.setOrigin(0.2, 0.5);
+    
+    dragonHealthBar = this.add.rectangle(this.cameras.main.width - 400, 40, 200, 20, 0xff3333).setScrollFactor(0);
+    dragonHealthBar.setOrigin(0.2, 0.5);
+    
+    // Show "INVINCIBLE" text if dragon is currently invincible
+    if (dragon.invincible) {
+        const invincibleLabel = this.add.text(this.cameras.main.width - 300, 70, "INVINCIBLE", { 
+            fontSize: '18px', 
+            fill: '#ffff00',
+            fontFamily: 'Arial',
+            fontStyle: 'italic'
+        }).setScrollFactor(0);
+        
+        // Make it pulse to draw attention
+        this.tweens.add({
+            targets: invincibleLabel,
+            alpha: 0.5,
+            duration: 800,
+            yoyo: true,
+            repeat: -1
+        });
+    }
+    
     // Towers counter
-    towersText = this.add.text(16, 84, `Towers: ${towers.filter(t => t.active).length}/${totalTowers}`, { 
+    towersText = this.add.text(16, 118, `Towers: ${towers.filter(t => t.active).length}/${totalTowers}`, { 
         fontSize: '24px', 
         fill: '#ff0',
         fontFamily: 'Arial'
     }).setScrollFactor(0);
     
-    // Create health bar that sticks to camera
-    const barBackground = this.add.rectangle(200, 64, 200, 16, 0x000000).setScrollFactor(0);
-    barBackground.setOrigin(0, 0.5);
-    healthBar = this.add.rectangle(200, 64, 200, 16, 0xff0000).setScrollFactor(0);
-    healthBar.setOrigin(0, 0.5);
-
     // Create minimap in the bottom left
     createMinimap.call(this);
-
+    
     // Keyboard controls
     cursors = this.input.keyboard.createCursorKeys();
     
@@ -213,14 +265,14 @@ function create() {
     teleportKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     
     // Inventory display
-    inventoryText = this.add.text(16, 118, '', { 
+    inventoryText = this.add.text(16, 152, '', { 
         fontSize: '24px', 
         fill: '#00ffff',
         fontFamily: 'Arial'
     }).setScrollFactor(0);
     
     // Teleport cooldown timer display
-    teleportTimerText = this.add.text(16, 152, '', { 
+    teleportTimerText = this.add.text(16, 186, '', { 
         fontSize: '24px', 
         fill: '#ff00ff',
         fontFamily: 'Arial'
@@ -239,6 +291,42 @@ function update(time, delta) {
     // Don't process player movement if math puzzle is active
     if (mathPuzzle && mathPuzzle.isActive) {
         return;
+    }
+
+    // Check if all towers are destroyed and make dragon vulnerable
+    const activeTowers = towers.filter(t => t.active).length;
+    if (activeTowers === 0 && dragon.invincible) {
+        dragon.invincible = false;
+        // Add a visual effect or notification that dragon is now vulnerable
+        const notification = this.add.text(
+            this.cameras.main.width / 2, 
+            this.cameras.main.height / 3, 
+            "DRAGON IS VULNERABLE!", 
+            { fontSize: '36px', fill: '#ff0', fontFamily: 'Arial' }
+        )
+        .setOrigin(0.5)
+        .setScrollFactor(0);
+        
+        // Fade out the notification after 3 seconds
+        this.tweens.add({
+            targets: notification,
+            alpha: 0,
+            duration: 3000,
+            ease: 'Power2',
+            onComplete: () => notification.destroy()
+        });
+        
+        // Update any "INVINCIBLE" text elements that might be showing
+        this.children.list.forEach(child => {
+            if (child.type === 'Text' && child.text === 'INVINCIBLE') {
+                this.tweens.add({
+                    targets: child,
+                    alpha: 0,
+                    duration: 1000,
+                    onComplete: () => child.destroy()
+                });
+            }
+        });
     }
     
     // Player movement
@@ -261,6 +349,22 @@ function update(time, delta) {
     
     // Update health bar width based on health
     healthBar.width = (playerHealth / 100) * 200;
+    
+    // Update dragon health bar if dragon is active
+    if (dragon && dragon.active) {
+        dragonHealthBar.width = (dragon.health / dragon.maxHealth) * 200;
+        dragonHealthText.setText(`Dragon Health: ${dragon.health}`);
+        
+        // Update dragon health bar color based on health percentage
+        const healthPercent = dragon.health / dragon.maxHealth;
+        if (healthPercent < 0.3) {
+            dragonHealthBar.fillColor = 0xff0000; // Red when low health
+        } else if (healthPercent < 0.6) {
+            dragonHealthBar.fillColor = 0xff9900; // Orange when medium health
+        } else {
+            dragonHealthBar.fillColor = 0xff3333; // Normal color otherwise
+        }
+    }
     
     // Attack when space is pressed
     if (attackKey.isDown && !attackCooldown) {
@@ -369,6 +473,8 @@ function attack(scene) {
     const projectile = scene.projectiles.create(player.x, player.y, 'ender_crystal');
     projectile.setScale(0.2);
     projectile.body.setAllowGravity(false);
+    
+    // Ensure this data flag is properly set to true
     projectile.setData('isEnderCrystal', true);
     
     // Set projectile velocity based on player facing direction
@@ -545,14 +651,37 @@ function createTeleportEffect(scene, x, y) {
     });
 }
 
-// Function to handle player damage
+// Function to damage player with improved UI feedback
 function damagePlayer(amount) {
     playerHealth -= amount;
     if (playerHealth <= 0) {
         playerHealth = 0;
         displayGameOver();
     }
-    healthText.setText(`Health: ${playerHealth}`);
+    healthText.setText(`Player Health: ${playerHealth}`);
+    
+    // Visual feedback on health bar
+    if (playerHealth < 30) {
+        healthBar.fillColor = 0xff0000; // Red when low health
+    } else if (playerHealth < 60) {
+        healthBar.fillColor = 0xff9900; // Orange when medium health
+    } else {
+        healthBar.fillColor = 0x00ff00; // Green when high health
+    }
+    
+    // Add a pulse animation to the health bar when damaged
+    const originalWidth = healthBar.width;
+    const scene = healthBar.scene;
+    scene.tweens.add({
+        targets: healthBar,
+        scaleX: 1.05,
+        scaleY: 1.2,
+        duration: 100,
+        yoyo: true,
+        onComplete: function() {
+            healthBar.setScale(1);
+        }
+    });
 }
 
 // Function to display game over screen
@@ -643,9 +772,17 @@ function restartGame() {
     teleportCooldown = false;
     teleportCooldownTimer = 0;
     
+    // Resume physics if paused
+    if (game.scene.scenes[0].physics.world.isPaused) {
+        game.scene.scenes[0].physics.resume();
+    }
+    
     // Restart the current scene
     game.scene.scenes[0].scene.restart();
 }
+
+// Make restartGame available globally
+window.restartGame = restartGame;
 
 // Function to handle tower being hit by projectile
 function hitTower(tower, projectile) {
@@ -706,6 +843,18 @@ function hitTower(tower, projectile) {
                     ease: 'Power2',
                     onComplete: () => notification.destroy()
                 });
+                
+                // Update any "INVINCIBLE" text elements that might be showing
+                this.children.list.forEach(child => {
+                    if (child.type === 'Text' && child.text === 'INVINCIBLE') {
+                        this.tweens.add({
+                            targets: child,
+                            alpha: 0,
+                            duration: 1000,
+                            onComplete: () => child.destroy()
+                        });
+                    }
+                });
             }
         },
         // On wrong answer
@@ -763,6 +912,13 @@ function hitDragon(dragon, projectile) {
     // Determine if it's an ender crystal
     const isEnderCrystal = projectile.getData('isEnderCrystal');
     
+    // Debug information
+    console.log('Hit dragon with projectile:', {
+        isEnderCrystal: isEnderCrystal,
+        dragonInvincible: dragon.invincible,
+        activeTowers: towers.filter(t => t.active).length
+    });
+    
     // Destroy the projectile
     projectile.destroy();
     
@@ -819,12 +975,43 @@ function hitDragon(dragon, projectile) {
         dragon.clearTint();
     }, 200);
     
+    // Update dragon health display with animation
+    if (dragonHealthBar) {
+        const scene = dragonHealthBar.scene;
+        scene.tweens.add({
+            targets: dragonHealthBar,
+            scaleY: 1.3,
+            duration: 100,
+            yoyo: true,
+            onComplete: function() {
+                dragonHealthBar.setScale(1);
+            }
+        });
+    }
+    
     // Increase score
     score += 10;
     scoreText.setText('Score: ' + score);
     
     // Special effects on hit
     createDragonHitEffect(this, dragon.x, dragon.y);
+    
+    // Show damage number
+    const damageText = this.add.text(
+        dragon.x + Phaser.Math.Between(-20, 20), 
+        dragon.y, 
+        "-1", 
+        { fontSize: '24px', fill: '#ff0000', fontFamily: 'Arial', fontWeight: 'bold' }
+    );
+    
+    // Make damage text float up and fade out
+    this.tweens.add({
+        targets: damageText,
+        y: dragon.y - 60,
+        alpha: 0,
+        duration: 1000,
+        onComplete: () => damageText.destroy()
+    });
     
     // If dragon is defeated, respawn it after a delay
     if (dragon.health <= 0) {
@@ -852,41 +1039,46 @@ function hitDragon(dragon, projectile) {
         dragon.setVisible(false);
         dragon.setActive(false);
         
+        // Hide dragon health UI when dragon is defeated
+        dragonHealthText.setVisible(false);
+        dragonHealthBar.setVisible(false);
+        dragonHealthBarBackground.setVisible(false);
+        
         // Add big score bonus for defeating dragon
         score += 100;
         scoreText.setText('Score: ' + score);
         
-        // Show victory notification
-        const victoryText = this.add.text(
-            this.cameras.main.width / 2, 
-            this.cameras.main.height / 3, 
-            "DRAGON DEFEATED! +100 POINTS", 
-            { fontSize: '36px', fill: '#ffff00', fontFamily: 'Arial' }
-        )
-        .setOrigin(0.5)
-        .setScrollFactor(0);
+        // Show victory screen
+        victoryScreen.show(score);
         
-        // Fade out the notification after 3 seconds
-        this.tweens.add({
-            targets: victoryText,
-            alpha: 0,
-            duration: 3000,
-            ease: 'Power2',
-            onComplete: () => victoryText.destroy()
-        });
+        // Pause game physics while victory screen is showing
+        this.physics.pause();
         
-        // Respawn after 5 seconds
+        // Respawn after 5 seconds and resume if player chooses to continue
         setTimeout(() => {
-            // Reset dragon position and health to a random location
-            const randomXPosition = Phaser.Math.Between(100, worldWidth - 100);
-            dragon.x = randomXPosition;
-            dragon.y = 100;
-            dragon.health = 5;
-            dragon.setVisible(true);
-            dragon.setActive(true);
-            
-            // If there are still towers, dragon is invincible
-            dragon.invincible = towers.filter(t => t.active).length > 0;
+            // Only respawn if not already on game over screen
+            if (!gameOver) {
+                // Reset dragon position and health to a random location
+                const randomXPosition = Phaser.Math.Between(100, worldWidth - 100);
+                dragon.x = randomXPosition;
+                dragon.y = 100;
+                dragon.health = dragon.maxHealth;
+                dragon.setVisible(true);
+                dragon.setActive(true);
+                
+                // Make dragon health UI visible again
+                dragonHealthText.setVisible(true);
+                dragonHealthBar.setVisible(true);
+                dragonHealthBarBackground.setVisible(true);
+                dragonHealthBar.width = 200; // Reset health bar width
+                dragonHealthBar.fillColor = 0xff3333; // Reset health bar color
+                
+                // If there are still towers, dragon is invincible
+                dragon.invincible = towers.filter(t => t.active).length > 0;
+                
+                // Resume physics
+                this.physics.resume();
+            }
         }, 5000);
     }
 }
