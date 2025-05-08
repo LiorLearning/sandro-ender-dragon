@@ -65,6 +65,7 @@ let teleportTimerText; // Text to display teleport cooldown
 let inventoryText; // Text to display inventory items
 let mathPuzzle; // Math puzzle instance
 let victoryScreen; // Victory screen instance
+let audioManager; // Audio manager instance
 
 // Preload game assets
 function preload() {
@@ -73,6 +74,14 @@ function preload() {
     
     // Load the victory screen script
     this.load.script('victoryScreen', './victoryScreen.js');
+    
+    // Load the audio manager script
+    this.load.script('audioManager', './audioManager.js');
+
+    // Load audio assets directly
+    this.load.audio('bgm', 'assets/sound/bgm.mp3');
+    this.load.audio('hit', 'assets/sound/hit.mp3');
+    this.load.audio('explosion', 'assets/sound/explosion.mp3');
     
     this.load.image('player', './assets/images/player.png');
     this.load.image('ground', './assets/images/platform.png');
@@ -89,6 +98,9 @@ function create() {
     // Set world bounds
     this.physics.world.setBounds(0, 0, worldWidth, window.innerHeight);
     
+    // Initialize AudioManager
+    audioManager = new AudioManager(this);
+    
     // Add sky background - make it as wide as the world
     this.add.tileSprite(0, 0, worldWidth, window.innerHeight, 'sky')
         .setOrigin(0, 0)
@@ -99,6 +111,10 @@ function create() {
     
     // Initialize victory screen
     victoryScreen = new VictoryScreen(this);
+
+    // Add sounds and play BGM directly as assets are loaded in scene's preload
+    audioManager.addSounds();
+    audioManager.playBGM();
 
     // Create the dragon at a random position in the world
     const randomXPosition = Phaser.Math.Between(100, worldWidth - 100);
@@ -689,6 +705,7 @@ function displayGameOver() {
     if (gameOver) return; // Prevent multiple calls
     
     gameOver = true;
+    audioManager.stopBGM(); // Stop background music
     
     // Create semi-transparent overlay
     const overlay = game.scene.scenes[0].add.rectangle(
@@ -777,6 +794,11 @@ function restartGame() {
         game.scene.scenes[0].physics.resume();
     }
     
+    // Play BGM again
+    if (audioManager) {
+        audioManager.playBGM();
+    }
+    
     // Restart the current scene
     game.scene.scenes[0].scene.restart();
 }
@@ -795,6 +817,11 @@ function hitTower(tower, projectile) {
     // Only proceed if it was an ender crystal
     if (!isEnderCrystal) {
         return;
+    }
+
+    // Play explosion sound
+    if (audioManager) {
+        audioManager.playExplosionSound();
     }
     
     // Show math puzzle before destroying the tower
@@ -905,6 +932,11 @@ function createTowerDestructionEffect(scene, x, y) {
     scene.time.delayedCall(800, () => {
         particles.destroy();
     });
+
+    // Play explosion sound
+    if (audioManager) {
+        audioManager.playExplosionSound();
+    }
 }
 
 // Function to handle dragon being hit by projectile
@@ -968,6 +1000,11 @@ function hitDragon(dragon, projectile) {
     
     // Decrease dragon health
     dragon.health -= 1;
+
+    // Play hit sound
+    if (audioManager) {
+        audioManager.playExplosionSound();
+    }
     
     // Flash the dragon red
     dragon.setTint(0xff0000);
@@ -995,6 +1032,11 @@ function hitDragon(dragon, projectile) {
     
     // Special effects on hit
     createDragonHitEffect(this, dragon.x, dragon.y);
+    
+    // Play explosion sound
+    if (audioManager) {
+        audioManager.playExplosionSound();
+    }
     
     // Show damage number
     const damageText = this.add.text(
@@ -1137,6 +1179,11 @@ function createDragonHitEffect(scene, x, y) {
 function dragonBreatheFire() {
     // Create fire projectile from dragon's position using graphics instead of sprite
     const fire = this.add.graphics();
+    
+    // Play hit sound
+    if (audioManager) {
+        audioManager.playExplosionSound();
+    }
     
     // Draw fire shape with more yellowish-red colors
     fire.fillStyle(0xffcc00, 0.7); // Yellow-orange outer color with reduced alpha
