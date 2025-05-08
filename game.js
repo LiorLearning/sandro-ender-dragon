@@ -140,7 +140,7 @@ function create() {
     
     // Create towers on random platforms (10 towers)
     this.towerGroup = this.physics.add.group();
-    const numTowers = 2;
+    const numTowers = 10;
     totalTowers = numTowers;
     
     // Select random platforms to place towers on
