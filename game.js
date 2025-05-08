@@ -59,9 +59,13 @@ let teleportCooldownTimer = 0; // Cooldown timer for teleportation (2 seconds)
 const TELEPORT_COOLDOWN_TIME = 2000; // 2 seconds cooldown
 let teleportTimerText; // Text to display teleport cooldown
 let inventoryText; // Text to display inventory items
+let mathPuzzle; // Math puzzle instance
 
 // Preload game assets
 function preload() {
+    // Load the math puzzle script
+    this.load.script('mathPuzzle', './mathPuzzle.js');
+    
     this.load.image('player', './assets/images/player.png');
     this.load.image('ground', './assets/images/platform.png');
     this.load.image('sky', './assets/images/background.png');
@@ -137,6 +141,9 @@ function create() {
         tower.body.setAllowGravity(false);
         towers.push(tower);
     });
+
+    // Initialize math puzzle system
+    mathPuzzle = new MathPuzzle(this);
 
     // Create player
     player = this.physics.add.sprite(100, window.innerHeight - 400, 'player');
@@ -226,6 +233,11 @@ function create() {
 function update(time, delta) {
     // Don't update game logic if game is over
     if (gameOver) {
+        return;
+    }
+    
+    // Don't process player movement if math puzzle is active
+    if (mathPuzzle && mathPuzzle.isActive) {
         return;
     }
     
@@ -416,68 +428,97 @@ function teleportPlayer(scene) {
         return;
     }
     
-    // Set cooldown
-    teleportCooldown = true;
-    teleportCooldownTimer = 0;
-    teleportTimerText.setText(`Teleport: 2s`);
-    
-    // Create teleportation effect at current position
-    createTeleportEffect(scene, player.x, player.y);
-    
-    // Find the nearest tower or dragon to teleport to
-    const activeTowers = towers.filter(t => t.active);
-    
-    let targetX, targetY;
-    
-    if (activeTowers.length > 0) {
-        // Find the nearest tower
-        let nearestTower = activeTowers[0];
-        let shortestDistance = Phaser.Math.Distance.Between(
-            player.x, player.y, nearestTower.x, nearestTower.y
-        );
-        
-        activeTowers.forEach(tower => {
-            const distance = Phaser.Math.Distance.Between(
-                player.x, player.y, tower.x, tower.y
-            );
+    // Show math puzzle before teleporting
+    mathPuzzle.show(
+        // On correct answer
+        () => {
+            // Set cooldown
+            teleportCooldown = true;
+            teleportCooldownTimer = 0;
+            teleportTimerText.setText(`Teleport: 2s`);
             
-            if (distance < shortestDistance) {
-                shortestDistance = distance;
-                nearestTower = tower;
-            }
-        });
-        
-        // Set teleport position near the tower
-        targetX = nearestTower.x;
-        targetY = nearestTower.y - 100; // Teleport above the tower
-    } else {
-        // If no towers left, teleport near the dragon
-        targetX = dragon.x + Phaser.Math.Between(-100, 100);
-        targetY = dragon.y + 100; // Teleport below the dragon
-    }
-    
-    // Create flash effect
-    const flash = scene.add.rectangle(0, 0, game.config.width*2, game.config.height*2, 0xaaaaff, 0.3)
-        .setScrollFactor(0)
-        .setDepth(100);
-    
-    // Flash and teleport
-    scene.tweens.add({
-        targets: flash,
-        alpha: 0,
-        duration: 200,
-        onComplete: () => {
-            // Teleport player
-            player.x = targetX;
-            player.y = targetY;
-            
-            // Create teleport arrival effect
+            // Create teleportation effect at current position
             createTeleportEffect(scene, player.x, player.y);
             
-            // Remove flash
-            flash.destroy();
+            // Find the nearest tower or dragon to teleport to
+            const activeTowers = towers.filter(t => t.active);
+            
+            let targetX, targetY;
+            
+            if (activeTowers.length > 0) {
+                // Find the nearest tower
+                let nearestTower = activeTowers[0];
+                let shortestDistance = Phaser.Math.Distance.Between(
+                    player.x, player.y, nearestTower.x, nearestTower.y
+                );
+                
+                activeTowers.forEach(tower => {
+                    const distance = Phaser.Math.Distance.Between(
+                        player.x, player.y, tower.x, tower.y
+                    );
+                    
+                    if (distance < shortestDistance) {
+                        shortestDistance = distance;
+                        nearestTower = tower;
+                    }
+                });
+                
+                // Set teleport position near the tower
+                targetX = nearestTower.x;
+                targetY = nearestTower.y - 100; // Teleport above the tower
+            } else {
+                // If no towers left, teleport near the dragon
+                targetX = dragon.x + Phaser.Math.Between(-100, 100);
+                targetY = dragon.y + 100; // Teleport below the dragon
+            }
+            
+            // Create flash effect
+            const flash = scene.add.rectangle(0, 0, game.config.width*2, game.config.height*2, 0xaaaaff, 0.3)
+                .setScrollFactor(0)
+                .setDepth(100);
+            
+            // Flash and teleport
+            scene.tweens.add({
+                targets: flash,
+                alpha: 0,
+                duration: 200,
+                onComplete: () => {
+                    // Teleport player
+                    player.x = targetX;
+                    player.y = targetY;
+                    
+                    // Create teleport arrival effect
+                    createTeleportEffect(scene, player.x, player.y);
+                    
+                    // Remove flash
+                    flash.destroy();
+                }
+            });
+        },
+        // On wrong answer - small penalty
+        () => {
+            // Small score penalty for wrong answer
+            score = Math.max(0, score - 5);
+            scoreText.setText('Score: ' + score);
+            
+            // Show penalty message
+            const penaltyText = scene.add.text(
+                window.innerWidth / 2,
+                window.innerHeight / 2 + 170,
+                "-5 points",
+                { fontSize: '20px', fill: '#ff5555', fontFamily: 'Arial' }
+            ).setOrigin(0.5).setScrollFactor(0).setDepth(201);
+            
+            // Fade out the penalty message
+            scene.tweens.add({
+                targets: penaltyText,
+                alpha: 0,
+                duration: 1000,
+                delay: 1000,
+                onComplete: () => penaltyText.destroy()
+            });
         }
-    });
+    );
 }
 
 // Create teleport effect with fewer particles
@@ -619,49 +660,78 @@ function hitTower(tower, projectile) {
         return;
     }
     
-    // Destroy the tower with effects
-    createTowerDestructionEffect(this, tower.x, tower.y);
-    
-    // Deactivate the tower
-    tower.setActive(false);
-    tower.setVisible(false);
-    
-    // Also update the minimap marker for this tower
-    const towerEntity = minimapEntities.find(
-        entity => entity.type === 'tower' && entity.gameObject === tower
+    // Show math puzzle before destroying the tower
+    mathPuzzle.show(
+        // On correct answer
+        () => {
+            // Destroy the tower with effects
+            createTowerDestructionEffect(this, tower.x, tower.y);
+            
+            // Deactivate the tower
+            tower.setActive(false);
+            tower.setVisible(false);
+            
+            // Also update the minimap marker for this tower
+            const towerEntity = minimapEntities.find(
+                entity => entity.type === 'tower' && entity.gameObject === tower
+            );
+            if (towerEntity) {
+                towerEntity.marker.setVisible(false);
+            }
+            
+            // Increase score
+            score += 50;
+            scoreText.setText('Score: ' + score);
+            
+            // Check if all towers are destroyed
+            const remainingTowers = towers.filter(t => t.active).length;
+            if (remainingTowers === 0) {
+                dragon.invincible = false; // Make dragon vulnerable when all towers are destroyed
+                
+                // Add a visual effect or notification that dragon is now vulnerable
+                const notification = this.add.text(
+                    this.cameras.main.width / 2, 
+                    this.cameras.main.height / 3, 
+                    "DRAGON IS VULNERABLE!", 
+                    { fontSize: '36px', fill: '#ff0', fontFamily: 'Arial' }
+                )
+                .setOrigin(0.5)
+                .setScrollFactor(0);
+                
+                // Fade out the notification after 3 seconds
+                this.tweens.add({
+                    targets: notification,
+                    alpha: 0,
+                    duration: 3000,
+                    ease: 'Power2',
+                    onComplete: () => notification.destroy()
+                });
+            }
+        },
+        // On wrong answer
+        () => {
+            // Tower remains intact
+            const failText = this.add.text(
+                tower.x,
+                tower.y - 50,
+                "Tower Protected!",
+                { fontSize: '18px', fill: '#ff5555', fontFamily: 'Arial' }
+            ).setOrigin(0.5);
+            
+            // Fade out the notification
+            this.tweens.add({
+                targets: failText,
+                y: tower.y - 100,
+                alpha: 0,
+                duration: 1500,
+                onComplete: () => failText.destroy()
+            });
+            
+            // Small score penalty
+            score = Math.max(0, score - 10);
+            scoreText.setText('Score: ' + score);
+        }
     );
-    if (towerEntity) {
-        towerEntity.marker.setVisible(false);
-    }
-    
-    // Increase score
-    score += 50;
-    scoreText.setText('Score: ' + score);
-    
-    // Check if all towers are destroyed
-    const remainingTowers = towers.filter(t => t.active).length;
-    if (remainingTowers === 0) {
-        dragon.invincible = false; // Make dragon vulnerable when all towers are destroyed
-        
-        // Add a visual effect or notification that dragon is now vulnerable
-        const notification = this.add.text(
-            this.cameras.main.width / 2, 
-            this.cameras.main.height / 3, 
-            "DRAGON IS VULNERABLE!", 
-            { fontSize: '36px', fill: '#ff0', fontFamily: 'Arial' }
-        )
-        .setOrigin(0.5)
-        .setScrollFactor(0);
-        
-        // Fade out the notification after 3 seconds
-        this.tweens.add({
-            targets: notification,
-            alpha: 0,
-            duration: 3000,
-            ease: 'Power2',
-            onComplete: () => notification.destroy()
-        });
-    }
 }
 
 // Function to create tower destruction effect with fewer particles
