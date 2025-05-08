@@ -1058,9 +1058,16 @@ function hitDragon(dragon, projectile) {
         setTimeout(() => {
             // Only respawn if not already on game over screen
             if (!gameOver) {
-                // Reset dragon position and health to a random location
-                const randomXPosition = Phaser.Math.Between(100, worldWidth - 100);
-                dragon.x = randomXPosition;
+                // Spawn dragon 500-800 pixels ahead of the player
+                const spawnDistance = Phaser.Math.Between(500, 800);
+                const playerDirection = player.flipX ? -1 : 1; // Get player's facing direction
+                const dragonX = player.x + (spawnDistance * playerDirection);
+                
+                // Make sure dragon spawns within world bounds
+                const boundedX = Phaser.Math.Clamp(dragonX, 100, worldWidth - 100);
+                
+                // Reset dragon position and health
+                dragon.x = boundedX;
                 dragon.y = 100;
                 dragon.health = dragon.maxHealth;
                 dragon.setVisible(true);
@@ -1078,6 +1085,25 @@ function hitDragon(dragon, projectile) {
                 
                 // Resume physics
                 this.physics.resume();
+                
+                // Add a visual notification of dragon respawn
+                const notification = this.add.text(
+                    this.cameras.main.width / 2, 
+                    this.cameras.main.height / 3, 
+                    "THE DRAGON HAS RETURNED!", 
+                    { fontSize: '32px', fill: '#ff5555', fontFamily: 'Arial', fontWeight: 'bold' }
+                )
+                .setOrigin(0.5)
+                .setScrollFactor(0);
+                
+                // Fade out the notification after 3 seconds
+                this.tweens.add({
+                    targets: notification,
+                    alpha: 0,
+                    duration: 2000,
+                    ease: 'Power2',
+                    onComplete: () => notification.destroy()
+                });
             }
         }, 5000);
     }
