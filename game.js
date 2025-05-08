@@ -69,6 +69,24 @@ let audioManager; // Audio manager instance
 
 // Preload game assets
 function preload() {
+    // Create loading text
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+    const loadingText = this.add.text(width / 2, height / 2, 'Loading...', {
+        font: '20px Arial',
+        fill: '#ffffff'
+    }).setOrigin(0.5, 0.5);
+
+    // Display loading progress
+    this.load.on('progress', (value) => {
+        loadingText.setText(`Loading: ${Math.floor(value * 100)}%`);
+    });
+
+    this.load.on('complete', () => {
+        loadingText.destroy();
+        console.log('All assets loaded successfully');
+    });
+
     // Load the math puzzle script
     this.load.script('mathPuzzle', './mathPuzzle.js');
     
@@ -77,6 +95,22 @@ function preload() {
     
     // Load the audio manager script
     this.load.script('audioManager', './audioManager.js');
+
+    // Track audio loading errors
+    this.load.on('loaderror', (fileObj) => {
+        console.error('Error loading file:', fileObj.key, fileObj.type);
+    });
+
+    // Audio loading complete
+    this.load.on('filecomplete-audio-bgm', () => {
+        console.log('BGM loaded successfully');
+    });
+    this.load.on('filecomplete-audio-hit', () => {
+        console.log('Hit sound loaded successfully');
+    });
+    this.load.on('filecomplete-audio-explosion', () => {
+        console.log('Explosion sound loaded successfully');
+    });
 
     // Load audio assets directly
     this.load.audio('bgm', 'assets/sound/bgm.mp3');
@@ -99,7 +133,23 @@ function create() {
     this.physics.world.setBounds(0, 0, worldWidth, window.innerHeight);
     
     // Initialize AudioManager
-    audioManager = new AudioManager(this);
+    try {
+        audioManager = new AudioManager(this);
+        console.log('AudioManager created successfully');
+    } catch (error) {
+        console.error('Error creating AudioManager:', error);
+    }
+    
+    // Unlock audio - add a one-time touch/click event to start audio
+    // This is necessary for browsers that require user interaction before playing audio
+    this.sound.once('unlocked', () => {
+        console.log('Audio unlocked, starting sounds');
+        // Add sounds and play BGM when audio is unlocked
+        if (audioManager) {
+            audioManager.addSounds();
+            audioManager.playBGM();
+        }
+    });
     
     // Add sky background - make it as wide as the world
     this.add.tileSprite(0, 0, worldWidth, window.innerHeight, 'sky')
@@ -112,13 +162,9 @@ function create() {
     // Initialize victory screen
     victoryScreen = new VictoryScreen(this);
 
-    // Add sounds and play BGM directly as assets are loaded in scene's preload
-    audioManager.addSounds();
-    audioManager.playBGM();
-
-    // Create the dragon at a random position in the world
-    const randomXPosition = Phaser.Math.Between(100, worldWidth - 100);
-    dragon = this.physics.add.sprite(randomXPosition, 100, 'dragon');
+    // Create the dragon in the first screen instead of a random position in the world
+    const firstScreenPosition = Phaser.Math.Between(100, window.innerWidth - 100);
+    dragon = this.physics.add.sprite(firstScreenPosition, 100, 'dragon');
     dragon.setScale(0.2);
     dragon.setVelocityX(150);
     dragon.body.setAllowGravity(false);
@@ -809,28 +855,35 @@ window.restartGame = restartGame;
 // Function to handle tower being hit by projectile
 function hitTower(tower, projectile) {
     // Check if the projectile is an ender crystal
-    const isEnderCrystal = projectile.getData('isEnderCrystal');
+    // const isEnderCrystal = projectile.getData('isEnderCrystal');
     
     // Destroy the projectile
     projectile.destroy();
     
     // Only proceed if it was an ender crystal
-    if (!isEnderCrystal) {
-        return;
-    }
+    // if (!isEnderCrystal) {
+    //     return;
+    // }
+
+    // Destroy the tower with effects
+    createTowerDestructionEffect(this, tower.x, tower.y);
 
     // Play explosion sound
-    if (audioManager) {
-        audioManager.playExplosionSound();
+    try {
+        if (audioManager) {
+            console.log('Playing explosion sound for tower hit');
+            audioManager.playExplosionSound();
+        } else {
+            console.warn('AudioManager not available for tower hit');
+        }
+    } catch (error) {
+        console.error('Error playing explosion sound:', error);
     }
     
     // Show math puzzle before destroying the tower
     mathPuzzle.show(
         // On correct answer
         () => {
-            // Destroy the tower with effects
-            createTowerDestructionEffect(this, tower.x, tower.y);
-            
             // Deactivate the tower
             tower.setActive(false);
             tower.setVisible(false);
@@ -934,8 +987,15 @@ function createTowerDestructionEffect(scene, x, y) {
     });
 
     // Play explosion sound
-    if (audioManager) {
-        audioManager.playExplosionSound();
+    try {
+        if (audioManager) {
+            console.log('Playing explosion sound for tower destruction');
+            audioManager.playExplosionSound();
+        } else {
+            console.warn('AudioManager not available for tower destruction');
+        }
+    } catch (error) {
+        console.error('Error playing explosion sound for tower destruction:', error);
     }
 }
 
@@ -1002,8 +1062,15 @@ function hitDragon(dragon, projectile) {
     dragon.health -= 1;
 
     // Play hit sound
-    if (audioManager) {
-        audioManager.playExplosionSound();
+    try {
+        if (audioManager) {
+            console.log('Playing hit sound for dragon hit');
+            audioManager.playHitSound();
+        } else {
+            console.warn('AudioManager not available for dragon hit');
+        }
+    } catch (error) {
+        console.error('Error playing hit sound:', error);
     }
     
     // Flash the dragon red
@@ -1032,11 +1099,6 @@ function hitDragon(dragon, projectile) {
     
     // Special effects on hit
     createDragonHitEffect(this, dragon.x, dragon.y);
-    
-    // Play explosion sound
-    if (audioManager) {
-        audioManager.playExplosionSound();
-    }
     
     // Show damage number
     const damageText = this.add.text(
@@ -1177,12 +1239,18 @@ function createDragonHitEffect(scene, x, y) {
 
 // Function for dragon to breathe fire - optimized
 function dragonBreatheFire() {
-    // Create fire projectile from dragon's position using graphics instead of sprite
     const fire = this.add.graphics();
     
-    // Play hit sound
-    if (audioManager) {
-        audioManager.playExplosionSound();
+    // Play explosion sound for fire breath
+    try {
+        if (audioManager) {
+            console.log('Playing explosion sound for dragon fire breath');
+            audioManager.playExplosionSound();
+        } else {
+            console.warn('AudioManager not available for dragon fire breath');
+        }
+    } catch (error) {
+        console.error('Error playing explosion sound for fire breath:', error);
     }
     
     // Draw fire shape with more yellowish-red colors
